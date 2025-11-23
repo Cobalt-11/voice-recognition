@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Voice Age & Gender Recognition</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background: #f8f9fa; }
+        .container { max-width: 700px; margin: 40px auto; }
+        .drop-zone {
+            border: 2px dashed #0d6efd;
+            border-radius: 10px;
+            padding: 2.5rem;
+            background: #fff;
+            text-align: center;
+            color: #0d6efd;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .drop-zone.dragover { background: #e7f1ff; }
+        #audioPreview { margin: 24px 0 12px 0; }
+        .prediction-card {
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        .model-badge {
+            background: #0d6efd;
+            color: white;
+            padding: 0.3rem 0.8rem;
+            border-radius: 20px;
+            font-size: 0.9em;
+        }
+        .progress {
+            height: 1.5rem;
+        }
+        .progress-bar {
+            font-size: 1em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container py-4">
+        <h1 class="mb-4 text-center">Voice Age & Gender Recognition</h1>
+        
+        <div class="drop-zone mb-3" id="dropZone">
+            <div>
+                <strong>Drag drop or record an audio file here, or click to select.</strong>
+            </div>
+            <input type="file" id="audioInput" accept="audio/*" hidden>
+        </div>
+        <div id="audioPreview" class="text-center"></div>
+        <div class="text-center mb-4">
+            <button class="btn btn-primary" id="analyzeBtn" onclick="analyzeAudio()" disabled>
+                Make prediction
+            </button>
+            <button class="btn btn-outline-secondary" onclick="clearAudio()">
+                Clear
+            </button>
+        </div>
+
+        <div id="results" class="mt-4">
+            <!-- DNN Results -->
+            <div class="prediction-card">
+                <div class="d-flex align-items-center gap-2 mb-3">
+                    <h4 class="mb-0">DNN</h4>
+                </div>
+                <div>
+                    <strong>Gender:</strong> <span id="dnnGender">-</span><br>
+                    <strong>Age:</strong> <span id="dnnAge">-</span><br>
+                    <strong>Confidence:</strong> <span id="dnnConf">-</span>
+                </div>
+            </div>
+
+            <!-- Cascaded Model Results (was "Random Forest") -->
+            <div class="prediction-card">
+                <div class="d-flex align-items-center gap-2 mb-3">
+                    <h4 class="mb-0">Cascaded Model</h4>
+                </div>
+                <div>
+                    <hr>
+                    <h5>Age:</h5>
+                </div>
+                <div>
+                    <strong>Prediction:</strong> <span id="cascadedAgePred">-</span><br>
+                    <strong>Probabilities:</strong>
+                    <div id="cascadedAgeProbs"></div>
+                </div>
+                <div>
+                    <hr>
+                </div>
+                <div>
+                    <h5>Gender:</h5>
+                </div>
+                <div>
+                    <strong>Prediction:</strong> <span id="cascadedGenderPred">-</span><br>
+                    <strong>Probabilities:</strong>
+                    <div id="cascadedGenderProbs"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const dropZone = document.getElementById('dropZone');
+        const audioInput = document.getElementById('audioInput');
+        const analyzeBtn = document.getElementById('analyzeBtn');
+        let currentAudioFile = null;
+
+        // Drag-and-drop handlers
+        dropZone.addEventListener('click', () => audioInput.click());
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+        dropZone.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+        });
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            if (e.dataTransfer.files.length) {
+                handleFile(e.dataTransfer.files[0]);
+            }
+        });
+        audioInput.addEventListener('change', (e) => {
+            if (e.target.files.length) {
+                handleFile(e.target.files[0]);
+            }
+        });
+
+        function handleFile(file) {
+            if (!file.type.startsWith('audio/')) {
+                showError('Please select a valid audio file.');
+                return;
+            }
+            currentAudioFile = file;
+            analyzeBtn.disabled = false;
+            const url = URL.createObjectURL(file);
+            document.getElementById('audioPreview').innerHTML = `
+                <audio controls src="${url}" class="w-100"></audio>
+            `;
+        }
+
+        function clearAudio() {
+            currentAudioFile = null;
+            audioInput.value = '';
+            document.getElementById('audioPreview').innerHTML = '';
+            analyzeBtn.disabled = true;
+            document.getElementById('dnnGender').textContent = '-';
+            document.getElementById('dnnAge').textContent = '-';
+            document.getElementById('dnnConf').textContent = '-';
+            document.getElementById('cascadedAgePred').textContent = '-';
+            document.getElementById('cascadedAgeProbs').innerHTML = '';
+            document.getElementById('cascadedGenderPred').textContent = '-';
+            document.getElementById('cascadedGenderProbs').innerHTML = '';
+            document.querySelectorAll('.alert').forEach(alert => alert.remove());
+        }
+
+        function showError(message) {
+            clearAudio();
+            const alert = document.createElement('div');
+            alert.className = 'alert alert-danger mt-3';
+            alert.innerHTML = `<strong>Error:</strong> ${message}`;
+            document.getElementById('results').prepend(alert);
+        }
+
+        async function analyzeAudio() {
+            if (!currentAudioFile) return;
+            analyzeBtn.disabled = true;
+            document.getElementById('dnnGender').textContent = '...';
+            document.getElementById('dnnAge').textContent = '...';
+            document.getElementById('dnnConf').textContent = '...';
+            document.getElementById('cascadedAgePred').textContent = '...';
+            document.getElementById('cascadedAgeProbs').innerHTML = '';
+            document.getElementById('cascadedGenderPred').textContent = '...';
+            document.getElementById('cascadedGenderProbs').innerHTML = '';
+            document.querySelectorAll('.alert').forEach(alert => alert.remove());
+
+            const formData = new FormData();
+            formData.append('audio', currentAudioFile);
+
+            try {
+                const response = await fetch('/predict', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                if (data.error) {
+                    showError(data.error);
+                    return;
+                }
+                updateResults(data);
+            } catch (err) {
+                showError('Server error or network issue.');
+            } finally {
+                analyzeBtn.disabled = false;
+            }
+        }
+
+        function updateResults(data) {
+            // DNN Results
+            document.getElementById('dnnGender').textContent = data.dnn.gender;
+            document.getElementById('dnnAge').textContent = data.dnn.age;
+            document.getElementById('dnnConf').textContent = (data.dnn.confidence * 100).toFixed(1) + '%';
+
+            // Cascaded Age
+            document.getElementById('cascadedAgePred').textContent = data.cascaded_age.prediction;
+            document.getElementById('cascadedAgeProbs').innerHTML = 
+                Object.entries(data.cascaded_age.probabilities)
+                    .map(([cls, prob]) => `
+                        <div class="progress my-2">
+                            <div class="progress-bar bg-primary" 
+                                 role="progressbar" 
+                                 style="width: ${(prob * 100).toFixed(1)}%">
+                                ${cls}: ${(prob * 100).toFixed(1)}%
+                            </div>
+                        </div>
+                    `).join('');
+
+            // Cascaded Gender
+            document.getElementById('cascadedGenderPred').textContent = data.cascaded_gender.prediction;
+            document.getElementById('cascadedGenderProbs').innerHTML = 
+                Object.entries(data.cascaded_gender.probabilities)
+                    .map(([cls, prob]) => `
+                        <div class="progress my-2">
+                            <div class="progress-bar bg-success" 
+                                 role="progressbar" 
+                                 style="width: ${(prob * 100).toFixed(1)}%">
+                                ${cls}: ${(prob * 100).toFixed(1)}%
+                            </div>
+                        </div>
+                    `).join('');
+        }
+    </script>
+</body>
+</html>
