@@ -33,7 +33,7 @@ Korišten je **Mozilla Common Voice** dataset, iz kojeg su preuzeti relevantni a
 
 ##  Metode i modeli  
 ### Značajke (Feature Extraction)
- - 13 glavninh frekvencijskih značajki govora kod MFCC-a
+ - 13 glavnih frekvencijskih značajki govora kod MFCC-a
  
 ### 1. Random Forest  
 
